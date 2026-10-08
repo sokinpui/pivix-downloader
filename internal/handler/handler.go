@@ -84,6 +84,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Query
 	mux.HandleFunc("GET /api/artworks", h.listArtworks)
 	mux.HandleFunc("GET /api/artworks/{id}", h.getArtworkDetail)
+	mux.HandleFunc("GET /api/bookmarks", h.listBookmarks)
 
 	// SSE
 	mux.HandleFunc("GET /api/events", h.handleSSE)
@@ -233,6 +234,38 @@ func (h *Handler) getArtworkDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, art, "success")
+}
+
+func (h *Handler) listBookmarks(w http.ResponseWriter, r *http.Request) {
+	userID := r.URL.Query().Get("user_id")
+	if userID == "" {
+		userID, _ = h.settingsRepo.Get("user_id")
+	}
+	if userID == "" {
+		respondError(w, http.StatusBadRequest, "user_id is required")
+		return
+	}
+
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page := 1
+	limit := 24
+	if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+		page = p
+	}
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+		limit = l
+	}
+	offset := (page - 1) * limit
+
+	bookmarks, err := h.syncService.GetRemoteBookmarks(r.Context(), userID, offset, limit)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, bookmarks, "success")
 }
 
 func (h *Handler) handleSSE(w http.ResponseWriter, r *http.Request) {

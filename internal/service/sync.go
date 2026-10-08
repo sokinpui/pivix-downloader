@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"pivis-downloader/internal/model"
 	"pivis-downloader/internal/pixiv"
@@ -143,6 +144,13 @@ func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error
 	s.eventHub.Publish(EventSyncFinished, map[string]any{"user_id": opts.UserID})
 	log.Printf("[SyncService] Bookmark sync finished for user %s", opts.UserID)
 	return nil
+}
+
+func (s *SyncService) GetRemoteBookmarks(ctx context.Context, userID string, offset, limit int) ([]pixiv.BookmarkWork, error) {
+	if userID == "" {
+		return nil, fmt.Errorf("user_id is required")
+	}
+	return s.client.FetchBookmarks(ctx, userID, offset, limit)
 }
 
 type counter struct {
