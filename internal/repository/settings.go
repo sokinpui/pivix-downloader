@@ -2,7 +2,6 @@ package repository
 
 import (
 	"database/sql"
-	"pivis-downloader/internal/model"
 )
 
 type SettingsRepository struct {

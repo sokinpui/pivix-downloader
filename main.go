@@ -2,78 +2,147 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	"pivis-downloader/internal/database"
+	"pivis-downloader/internal/engine"
+	"pivis-downloader/internal/handler"
+	"pivis-downloader/internal/pixiv"
+	"pivis-downloader/internal/repository"
+	"pivis-downloader/internal/service"
 )
 
 func main() {
-	sessionID := flag.String("session", "83027400_4AolHBitIh2q27HPRU5orhmt8nnWopUy", "Pixiv PHPSESSID")
-	userID := flag.String("user-id", "83027400", "Pixiv User ID")
-	limit := flag.Int("limit", 1, "Number of bookmarks to process")
-	proxyAddr := flag.String("proxy", "", "Optional HTTP/SOCKS5 proxy, e.g. http://127.0.0.1:7890")
+	port := flag.Int("port", 8080, "HTTP server port")
+	dbPath := flag.String("db", "./pivis.db", "SQLite database file path")
+	sessionID := flag.String("session", "", "Pixiv PHPSESSID (optional override)")
+	userID := flag.String("user-id", "", "Pixiv User ID (optional override)")
+	proxyAddr := flag.String("proxy", "", "Optional HTTP/SOCKS5 proxy")
 	outputDir := flag.String("output-dir", "./downloads", "Directory to save downloaded artworks")
-	timeout := flag.Duration("timeout", 45*time.Second, "Network timeout duration")
+	maxWorkers := flag.Int("workers", 2, "Max concurrent download workers")
 	flag.Parse()
 
-	if err := os.MkdirAll(*outputDir, 0o755); err != nil {
-		log.Fatalf("failed to create output dir: %v", err)
-	}
-
-	client, err := NewPixivClient(*sessionID, *proxyAddr, *timeout)
+	log.Println("[Init] Initializing SQLite database...")
+	db, err := database.InitDB(*dbPath)
 	if err != nil {
-		log.Fatalf("failed to initialize client: %v", err)
+		log.Fatalf("failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	settingsRepo := repository.NewSettingsRepository(db)
+	artworkRepo := repository.NewArtworkRepository(db)
+	taskRepo := repository.NewTaskRepository(db)
+
+	// Seed or load settings
+	if *sessionID != "" {
+		_ = settingsRepo.Set("session_id", *sessionID)
+	}
+	if *userID != "" {
+		_ = settingsRepo.Set("user_id", *userID)
+	}
+	if *proxyAddr != "" {
+		_ = settingsRepo.Set("proxy", *proxyAddr)
+	}
+	if *outputDir != "" {
+		_ = settingsRepo.Set("download_dir", *outputDir)
+	}
+	_ = settingsRepo.Set("max_workers", fmt.Sprintf("%d", *maxWorkers))
+
+	dbSession, _ := settingsRepo.Get("session_id")
+	dbProxy, _ := settingsRepo.Get("proxy")
+	dbOutput, _ := settingsRepo.Get("download_dir")
+	if dbOutput == "" {
+		dbOutput = *outputDir
 	}
 
-	ctx := context.Background()
-
-	fmt.Printf("[1/3] Fetching bookmarks for user %s...\n", *userID)
-	works, err := client.FetchBookmarks(ctx, *userID, 0, *limit)
+	client, err := pixiv.NewPixivClient(dbSession, dbProxy, 45*time.Second)
 	if err != nil {
-		log.Fatalf("bookmarks request failed: %v", err)
+		log.Fatalf("failed to initialize Pixiv client: %v", err)
 	}
 
-	if len(works) == 0 {
-		fmt.Println("no bookmarks found.")
-		return
+	eh := service.NewEventHub()
+
+	downloadEngine := engine.NewDownloadEngine(client, taskRepo, artworkRepo, eh, dbOutput, *maxWorkers)
+	downloadEngine.Start()
+	defer downloadEngine.Stop()
+
+	enqueueFunc := func(taskID int64) {
+		downloadEngine.EnqueueTask(taskID)
 	}
 
-	fmt.Printf("found %d bookmark(s). Starting validation...\n\n", len(works))
+	syncService := service.NewSyncService(client, artworkRepo, taskRepo, eh, enqueueFunc)
+	submitService := service.NewSubmissionService(client, artworkRepo, taskRepo, eh, enqueueFunc)
 
-	for i, work := range works {
-		illustID := work.ArtworkID()
-		fmt.Printf("[%d/%d] Processing Illust ID: %s | Title: %s\n", i+1, len(works), illustID, work.Title)
-
-		pages, err := client.FetchPages(ctx, illustID)
-		if err != nil {
-			log.Printf("failed to fetch pages for %s: %v", illustID, err)
-			continue
-		}
-
-		if len(pages) == 0 {
-			log.Printf("no pages found for %s", illustID)
-			continue
-		}
-
-		for pageIdx, page := range pages {
-			origURL := page.Urls.Original
-			if origURL == "" {
-				log.Printf("artwork %s page %d has empty original url", illustID, pageIdx)
-				continue
-			}
-
-			fmt.Printf("      Downloading Page %d: %s\n", pageIdx, origURL)
-			savedPath, bytesCount, err := client.DownloadImage(ctx, origURL, *outputDir)
+	hnd := handler.NewHandler(
+		settingsRepo,
+		artworkRepo,
+		taskRepo,
+		eh,
+		syncService,
+		submitService,
+		downloadEngine,
+		func(newSession, newProxy string) error {
+			newClient, err := pixiv.NewPixivClient(newSession, newProxy, 45*time.Second)
 			if err != nil {
-				log.Printf("      download failed: %v", err)
-				continue
+				return err
 			}
+			_ = newClient
+			return nil
+		},
+	)
 
-			fmt.Printf("      ✓ Saved: %s (%.2f MB)\n", savedPath, float64(bytesCount)/(1024*1024))
-		}
+	mux := http.NewServeMux()
+	hnd.RegisterRoutes(mux)
+
+	addr := fmt.Sprintf(":%d", *port)
+	srv := &http.Server{
+		Addr:    addr,
+		Handler: handler.CORS(mux),
 	}
 
-	fmt.Println("\nVerification complete.")
+	// Resume pending tasks on startup
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		pendingTasks, err := taskRepo.ListPending()
+		if err != nil {
+			log.Printf("[Engine] Failed to list pending tasks on startup: %v", err)
+			return
+		}
+		if len(pendingTasks) > 0 {
+			log.Printf("[Engine] Resuming %d pending/downloading task(s) from database...", len(pendingTasks))
+			for _, t := range pendingTasks {
+				downloadEngine.EnqueueTask(t.ID)
+			}
+		}
+	}()
+
+	go func() {
+		log.Printf("[Server] Pixiv Downloader backend started on http://0.0.0.0%s", addr)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP server failed: %v", err)
+		}
+	}()
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	log.Println("[Server] Shutting down server gracefully...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("[Server] Server stopped successfully.")
 }

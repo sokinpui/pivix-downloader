@@ -9,21 +9,19 @@ import (
 	"strings"
 
 	"pivis-downloader/internal/engine"
-	"pivis-downloader/internal/model"
-	"pivis-downloader/internal/pixiv"
 	"pivis-downloader/internal/repository"
 	"pivis-downloader/internal/service"
 )
 
 type Handler struct {
-	settingsRepo *repository.SettingsRepository
-	artworkRepo  *repository.ArtworkRepository
-	taskRepo     *repository.TaskRepository
-	eventHub     *service.EventHub
-	syncService  *service.SyncService
+	settingsRepo  *repository.SettingsRepository
+	artworkRepo   *repository.ArtworkRepository
+	taskRepo      *repository.TaskRepository
+	eventHub      *service.EventHub
+	syncService   *service.SyncService
 	submitService *service.SubmissionService
-	engine       *engine.DownloadEngine
-	updateClient func(sessionID, proxyAddr string) error
+	engine        *engine.DownloadEngine
+	updateClient  func(sessionID, proxyAddr string) error
 }
 
 func NewHandler(

@@ -1,67 +1,49 @@
-一个pivix batch downloader的go后端
+# Pivis Downloader Backend
 
-### 一、 核心流程与 curl 概念实现
+一个专为独立前端（Vue / React / Flutter 等）设计的、高可用、防封控、可恢复的 Pixiv 自动化批量下载服务后端。采用 Go 标准库 `net/http` + 纯 Go SQLite (`modernc.org/sqlite`)，无 CGO 编译依赖。
 
-Pixiv 的 Web 端有非常标准且清晰的 AJAX JSON 接口，整个过程只需要 3 次 HTTP 交互逻辑：
+## 架构特性
 
-#### 1. 身份认证与凭证
-
-由于书签（特别是包含非公开书签或 R-18 内容）需要登录态，最简单的方式是获取登录后的 **Cookie**（主要是 `PHPSESSID`）。
-
-#### 2. 获取收藏夹列表（Bookmarks ID）
-
-Pixiv 提供了分页接口来获取用户的收藏列表：
-
-- **接口**：`GET https://www.pixiv.net/ajax/user/{user_id}/illusts/bookmarks?tag=&offset={offset}&limit={limit}&rest=show`
-- **请求头**：需要带上 `Cookie: PHPSESSID=你的session;`
-- **返回**：JSON 数据，在 `body.works` 列表中可以遍历拿到每个作品的 `id`，以及多图数量 `pageCount`。
-
-#### 3. 获取高清原图链接（Pages）
-
-如果一个作品有多张图（图集或漫画），可以通过 pages 接口获取每一页的原图地址：
-
-- **接口**：`GET https://www.pixiv.net/ajax/illust/{illust_id}/pages`
-- **返回**：JSON 数据，结构如下：
-  ```json
-  {
-    "body": [
-      {
-        "urls": {
-          "original": "https://i.pximg.net/img-original/img/..._p0.jpg"
-        }
-      },
-      {
-        "urls": {
-          "original": "https://i.pximg.net/img-original/img/..._p1.png"
-        }
-      }
-    ]
-  }
-  ```
-
-#### 4. 使用 curl 下载高清原图（⚠️ 最关键的一步）
-
-Pixiv 的图片 CDN（`i.pximg.net`）有严格的**防盗链机制**。如果你直接用浏览器打开图片 URL 或直接发起 GET 请求，会返回 **`403 Forbidden`**。
-
-**只要带上 `Referer`，curl 就能直接下载**：
-
-```bash
-curl -H "Referer: https://www.pixiv.net/" \
-     -o output_p0.jpg \
-     "https://i.pximg.net/img-original/img/2023/..._p0.jpg"
-```
-
-这个 `Referer: https://www.pixiv.net/` 标头是下载成功的唯一硬性门槛。
+- **独立后端服务**：剥离前端展示代码，通过完备的 RESTful API 与 Server-Sent Events (SSE) 实时事件流与任意前端对接。
+- **纯 Go SQLite 存储**：零 CGO 依赖，内置 `pivis.db` 数据库与表自动迁移，支持任务状态持久化、断点恢复。
+- **增量书签同步与早停机制**：支持增量扫描书签，若遇到连续 `N` 个已下载画作，立即触发早停，防止触发 Pixiv 深度翻页频控。
+- **独立链接解析**：支持多种 Pixiv 分享链接（`artworks/{id}`、`member_illust.php`、纯数字 ID）智能解析与单作品录入。
+- **限速保护与原子落盘**：内置随机速率保护（`300ms ~ 600ms`），下载采用 `.tmp` 临时文件 + `os.Rename` 原子重命名，防止半截破损图片残留。
+- **SSE 实时状态推送**：实时广播发现作品、下载开始、下载完成、下载失败等事件。
 
 ---
 
-### 三、 开发时需要注意的坑
+## 快速运行
 
-1. **频率限制（Rate Limiting）与防封**：
-   - Pixiv 对频繁请求有速率限制。不要使用几十个并发线程去狂刷接口，容易收到 `429 Too Many Requests` 甚至触发 Cloudflare 验证码屏蔽 IP。
-   - **建议**：每次请求作品详情或下载图片之间，设置一个微小的延迟（例如 `300ms ~ 800ms`），并限制并发数（比如同时下载 2~3 个文件）。
-2. **动图（Ugoira）的处理**：
-   - Pixiv 的动图不是 GIF，也不是常规的视频，而是一组打包的 zip 帧序列帧 + 每帧延迟时间的 JSON。
-   - 如果作品的 `illustType == 2`（动图），`pages` 接口可能不适用，需要调用 `/ajax/illust/{id}/ugoira_meta` 拿到 zip 包和播放延时。如果初期想降低复杂度，可以先跳过动图。
-3. **断点续传与重试**：
-   - 图片体积较大（尤其是原图 PNG 动辄 10MB+），网络不稳定时容易中断，建议在下载器中加上失败重试逻辑（Retry 2~3 次）。
+```bash
+# 编译并运行
+go build -v .
+./pivis-downloader -port 8080 -session "你的PHPSESSID" -user-id "你的用户ID"
+```
+
+## API 接口规范
+
+所有响应统一采用 JSON Envelope 封装：
+```json
+{
+  "code": 0,
+  "message": "success",
+  "data": {}
+}
+```
+
+### 1. 配置管理
+- `GET /api/settings`: 获取系统配置（Session ID 脱敏、User ID、下载目录、代理等）。
+- `PUT /api/settings`: 更新系统配置。
+
+### 2. 任务触发
+- `POST /api/sync/bookmarks`: 触发增量书签同步（请求体可传 `{"force_full": false, "user_id": "..."}`）。
+- `POST /api/artworks/submit`: 提交单作品链接/ID（请求体 `{"url_or_id": "https://www.pixiv.net/artworks/..."}`）。
+- `POST /api/tasks/{task_id}/retry`: 重新投递失败的任务。
+
+### 3. 数据查询
+- `GET /api/artworks`: 获取画作列表（支持 `?status=completed&source=bookmark&page=1&limit=20`）。
+- `GET /api/artworks/{id}`: 获取单作品详情及所有分图下载状态。
+
+### 4. 实时状态推送
+- `GET /api/events`: SSE 实时事件流（`Content-Type: text/event-stream`）。

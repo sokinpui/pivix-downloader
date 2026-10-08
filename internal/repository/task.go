@@ -102,3 +102,31 @@ func (r *TaskRepository) ResetFailedTask(id int64) error {
 	`, id)
 	return err
 }
+
+func (r *TaskRepository) ListPending() ([]model.DownloadTask, error) {
+	rows, err := r.db.Query(`
+		SELECT id, artwork_id, page_index, image_url, file_path, file_size, status, retry_count, error_message, created_at, finished_at
+		FROM download_tasks WHERE status = 'pending' OR status = 'downloading' ORDER BY id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []model.DownloadTask
+	for rows.Next() {
+		var t model.DownloadTask
+		var createdAt string
+		var finishedAt sql.NullString
+		if err := rows.Scan(&t.ID, &t.ArtworkID, &t.PageIndex, &t.ImageURL, &t.FilePath, &t.FileSize, &t.Status, &t.RetryCount, &t.ErrorMessage, &createdAt, &finishedAt); err != nil {
+			return nil, err
+		}
+		t.CreatedAt, _ = time.Parse("2006-01-02 15:04:05", createdAt)
+		if finishedAt.Valid {
+			ft, _ := time.Parse("2006-01-02 15:04:05", finishedAt.String)
+			t.FinishedAt = &ft
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
+}
