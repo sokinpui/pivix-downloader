@@ -160,7 +160,8 @@ func (h *Handler) syncBookmarks(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) stopSync(w http.ResponseWriter, r *http.Request) {
 	h.syncService.StopSync()
-	respondJSON(w, http.StatusOK, nil, "sync task stopped successfully")
+	h.engine.CancelActiveDownloads()
+	respondJSON(w, http.StatusOK, nil, "sync and active downloads stopped successfully")
 }
 
 func (h *Handler) submitArtwork(w http.ResponseWriter, r *http.Request) {
