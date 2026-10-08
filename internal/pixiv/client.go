@@ -98,9 +98,17 @@ func NewPixivClient(sessionID, proxyAddr string, timeout time.Duration) (*PixivC
 }
 
 func (c *PixivClient) throttle() {
-	// Random sleep between 300ms and 600ms to prevent ban
 	ms := 300 + rand.Intn(300)
 	time.Sleep(time.Duration(ms) * time.Millisecond)
+}
+
+func (c *PixivClient) setCommonHeaders(req *http.Request, referer string) {
+	req.Header.Set("User-Agent", c.userAgent)
+	req.Header.Set("Referer", referer)
+	req.Header.Set("Cookie", fmt.Sprintf("PHPSESSID=%s", c.sessionID))
+	req.Header.Set("Accept", "application/json, text/javascript, */*; q=0.01")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9,ja;q=0.8")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 }
 
 func (c *PixivClient) FetchBookmarks(ctx context.Context, userID string, offset, limit int) ([]BookmarkWork, error) {
@@ -117,9 +125,7 @@ func (c *PixivClient) FetchBookmarks(ctx context.Context, userID string, offset,
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", c.userAgent)
-	req.Header.Set("Referer", fmt.Sprintf("https://www.pixiv.net/en/users/%s/bookmarks/artworks", userID))
-	req.Header.Set("Cookie", fmt.Sprintf("PHPSESSID=%s", c.sessionID))
+	c.setCommonHeaders(req, fmt.Sprintf("https://www.pixiv.net/en/users/%s/bookmarks/artworks", userID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -128,7 +134,8 @@ func (c *PixivClient) FetchBookmarks(ctx context.Context, userID string, offset,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d fetching bookmarks", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d fetching bookmarks: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var data BookmarksResponse
@@ -152,9 +159,7 @@ func (c *PixivClient) FetchIllustDetail(ctx context.Context, illustID string) (*
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", c.userAgent)
-	req.Header.Set("Referer", fmt.Sprintf("https://www.pixiv.net/artworks/%s", illustID))
-	req.Header.Set("Cookie", fmt.Sprintf("PHPSESSID=%s", c.sessionID))
+	c.setCommonHeaders(req, fmt.Sprintf("https://www.pixiv.net/artworks/%s", illustID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -163,7 +168,8 @@ func (c *PixivClient) FetchIllustDetail(ctx context.Context, illustID string) (*
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d fetching illust detail", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d fetching illust detail: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var data IllustDetailResponse
@@ -196,9 +202,7 @@ func (c *PixivClient) FetchPages(ctx context.Context, illustID string) ([]PageIn
 		return nil, err
 	}
 
-	req.Header.Set("User-Agent", c.userAgent)
-	req.Header.Set("Referer", fmt.Sprintf("https://www.pixiv.net/artworks/%s", illustID))
-	req.Header.Set("Cookie", fmt.Sprintf("PHPSESSID=%s", c.sessionID))
+	c.setCommonHeaders(req, fmt.Sprintf("https://www.pixiv.net/artworks/%s", illustID))
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -207,7 +211,8 @@ func (c *PixivClient) FetchPages(ctx context.Context, illustID string) ([]PageIn
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code %d fetching pages", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("unexpected status code %d fetching pages: %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var data PagesResponse
@@ -268,7 +273,6 @@ func (c *PixivClient) DownloadImage(ctx context.Context, imgURL, outputDir strin
 		return "", 0, fmt.Errorf("write stream to temp file: %w", copyErr)
 	}
 
-	// Atomic rename
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		os.Remove(tmpPath)
 		return "", 0, fmt.Errorf("atomic rename failed: %w", err)
