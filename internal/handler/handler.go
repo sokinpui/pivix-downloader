@@ -78,6 +78,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 
 	// Sync & Submit & Tasks
 	mux.HandleFunc("POST /api/sync/bookmarks", h.syncBookmarks)
+	mux.HandleFunc("POST /api/sync/stop", h.stopSync)
 	mux.HandleFunc("POST /api/artworks/submit", h.submitArtwork)
 	mux.HandleFunc("POST /api/tasks/{task_id}/retry", h.retryTask)
 
@@ -155,6 +156,11 @@ func (h *Handler) syncBookmarks(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	respondJSON(w, http.StatusOK, nil, "sync triggered in background")
+}
+
+func (h *Handler) stopSync(w http.ResponseWriter, r *http.Request) {
+	h.syncService.StopSync()
+	respondJSON(w, http.StatusOK, nil, "sync task stopped successfully")
 }
 
 func (h *Handler) submitArtwork(w http.ResponseWriter, r *http.Request) {

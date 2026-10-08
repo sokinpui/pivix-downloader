@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sync"
+
 	"pivis-downloader/internal/model"
 	"pivis-downloader/internal/pixiv"
 	"pivis-downloader/internal/repository"
@@ -15,6 +17,9 @@ type SyncService struct {
 	taskRepo    *repository.TaskRepository
 	eventHub    *EventHub
 	enqueueFunc func(taskID int64)
+
+	mu         sync.Mutex
+	cancelSync context.CancelFunc
 }
 
 func NewSyncService(
@@ -40,6 +45,23 @@ type SyncOptions struct {
 }
 
 func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error {
+	s.mu.Lock()
+	if s.cancelSync != nil {
+		s.cancelSync()
+	}
+	syncCtx, cancel := context.WithCancel(ctx)
+	s.cancelSync = cancel
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		if s.cancelSync != nil {
+			s.cancelSync()
+			s.cancelSync = nil
+		}
+		s.mu.Unlock()
+	}()
+
 	if opts.UserID == "" {
 		return nil
 	}
@@ -49,16 +71,17 @@ func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error
 
 	limit := 48
 	offset := 0
-	consecutiveCompleted := decrConsecutiveCount() // helper tracker
+	consecutiveCompleted := decrConsecutiveCount()
 
 	log.Printf("[SyncService] Starting bookmark sync for user %s (force_full=%v)...", opts.UserID, opts.ForceFull)
 
 	for {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if syncCtx.Err() != nil {
+			log.Printf("[SyncService] Bookmark sync cancelled for user %s", opts.UserID)
+			return syncCtx.Err()
 		}
 
-		works, err := s.client.FetchBookmarks(ctx, opts.UserID, offset, limit)
+		works, err := s.client.FetchBookmarks(syncCtx, opts.UserID, offset, limit)
 		if err != nil {
 			log.Printf("[SyncService] Fetch bookmarks error at offset %d: %v", offset, err)
 			break
@@ -70,12 +93,15 @@ func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error
 
 		batchEarlyExit := false
 		for _, work := range works {
+			if syncCtx.Err() != nil {
+				break
+			}
+
 			illustID := work.ArtworkID()
 			if illustID == "" {
 				continue
 			}
 
-			// Check local db status
 			existing, err := s.artworkRepo.GetByID(illustID)
 			if err == nil && existing != nil && existing.Status == model.StatusArtworkCompleted {
 				if !opts.ForceFull {
@@ -89,10 +115,8 @@ func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error
 				continue
 			}
 
-			// Reset counter since we found an uncompleted or new artwork
 			consecutiveCompleted.reset()
 
-			// Upsert artwork
 			art := &model.Artwork{
 				ID:         illustID,
 				Title:      work.Title,
@@ -106,8 +130,7 @@ func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error
 			_ = s.artworkRepo.Upsert(art)
 			s.eventHub.Publish(EventArtworkDiscovered, art)
 
-			// Fetch pages and create tasks
-			pages, err := s.client.FetchPages(ctx, illustID)
+			pages, err := s.client.FetchPages(syncCtx, illustID)
 			if err != nil {
 				log.Printf("[SyncService] Fetch pages for %s failed: %v", illustID, err)
 				continue
@@ -144,6 +167,16 @@ func (s *SyncService) SyncBookmarks(ctx context.Context, opts SyncOptions) error
 	s.eventHub.Publish(EventSyncFinished, map[string]any{"user_id": opts.UserID})
 	log.Printf("[SyncService] Bookmark sync finished for user %s", opts.UserID)
 	return nil
+}
+
+func (s *SyncService) StopSync() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cancelSync != nil {
+		s.cancelSync()
+		s.cancelSync = nil
+		log.Printf("[SyncService] Stop sync requested via API")
+	}
 }
 
 func (s *SyncService) GetRemoteBookmarks(ctx context.Context, userID string, offset, limit int) ([]pixiv.BookmarkWork, error) {
