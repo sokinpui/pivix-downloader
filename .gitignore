@@ -1,0 +1,21 @@
+# Binaries and build artifacts
+/pivis-downloader
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# SQLite Database and WAL files
+pivis.db
+pivis.db-*
+
+# Downloaded Artworks directory
+/downloads/
+
+# IDE / Editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
