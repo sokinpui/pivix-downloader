@@ -6,9 +6,9 @@ import (
 	"log"
 	"sync"
 
-	"pivis-downloader/internal/model"
-	"pivis-downloader/internal/pixiv"
-	"pivis-downloader/internal/repository"
+	"github.com/sokinpui/pivix-downloader/internal/model"
+	"github.com/sokinpui/pivix-downloader/internal/pixiv"
+	"github.com/sokinpui/pivix-downloader/internal/repository"
 )
 
 type SyncService struct {

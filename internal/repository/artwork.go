@@ -2,7 +2,7 @@ package repository
 
 import (
 	"database/sql"
-	"pivis-downloader/internal/model"
+	"github.com/sokinpui/pivix-downloader/internal/model"
 	"time"
 )
 

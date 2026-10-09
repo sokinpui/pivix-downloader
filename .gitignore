@@ -19,3 +19,5 @@ pivis.db-*
 *.swp
 *.swo
 .DS_Store
+
+pivix-downloader

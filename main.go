@@ -12,12 +12,12 @@ import (
 	"syscall"
 	"time"
 
-	"pivis-downloader/internal/database"
-	"pivis-downloader/internal/engine"
-	"pivis-downloader/internal/handler"
-	"pivis-downloader/internal/pixiv"
-	"pivis-downloader/internal/repository"
-	"pivis-downloader/internal/service"
+	"github.com/sokinpui/pivix-downloader/internal/database"
+	"github.com/sokinpui/pivix-downloader/internal/engine"
+	"github.com/sokinpui/pivix-downloader/internal/handler"
+	"github.com/sokinpui/pivix-downloader/internal/pixiv"
+	"github.com/sokinpui/pivix-downloader/internal/repository"
+	"github.com/sokinpui/pivix-downloader/internal/service"
 )
 
 func main() {
