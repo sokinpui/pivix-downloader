@@ -39,7 +39,7 @@
 
 ### 3. 数据模型设计 (SQLite Schema)
 
-采用纯 Go 驱动 `modernc.org/sqlite`，避免 CGO 编译依赖，数据文件命名为 `pivis.db`。
+采用纯 Go 驱动 `modernc.org/sqlite`，避免 CGO 编译依赖，数据文件命名为 `pixiv.db`。
 
 #### 3.1 表结构与索引
 
@@ -174,7 +174,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_artwork_id ON download_tasks(artwork_id);
 ### 6. 项目代码目录规划 (Go Project Layout)
 
 ```
-pivis-downloader/
+pixiv-downloader/
 ├── go.mod
 ├── go.sum
 ├── main.go                       # 应用程序启动入口 (组装各层、优雅关机)

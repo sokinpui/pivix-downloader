@@ -21,6 +21,7 @@ type BookmarkWork struct {
 	UserID     json.RawMessage `json:"userId"`
 	UserName   string          `json:"userName"`
 	PageCount  int             `json:"pageCount"`
+	Tags       []string        `json:"tags"`
 	IllustType int             `json:"illustType"`
 }
 
@@ -65,6 +66,14 @@ type IllustDetailResponse struct {
 		UserName   string          `json:"userName"`
 		PageCount  int             `json:"pageCount"`
 		IllustType int             `json:"illustType"`
+		Tags       struct {
+			Tags []struct {
+				Tag         string `json:"tag"`
+				Translation struct {
+					En string `json:"en"`
+				} `json:"translation"`
+			} `json:"tags"`
+		} `json:"tags"`
 	} `json:"body"`
 }
 
@@ -177,8 +186,9 @@ func (c *PixivClient) FetchIllustDetail(ctx context.Context, illustID string) (*
 		return nil, fmt.Errorf("decode illust detail response: %w", err)
 	}
 
-	if data.Error {
-		return nil, fmt.Errorf("pixiv api returned error: %s", data.Message)
+	var tags []string
+	for _, t := range data.Body.Tags.Tags {
+		tags = append(tags, t.Tag)
 	}
 
 	work := BookmarkWork{
@@ -187,8 +197,10 @@ func (c *PixivClient) FetchIllustDetail(ctx context.Context, illustID string) (*
 		UserID:     data.Body.UserID,
 		UserName:   data.Body.UserName,
 		PageCount:  data.Body.PageCount,
+		Tags:       tags,
 		IllustType: data.Body.IllustType,
 	}
+
 
 	return &work, nil
 }

@@ -1,5 +1,5 @@
 # Binaries and build artifacts
-/pivis-downloader
+/pixiv-downloader
 *.exe
 *.exe~
 *.dll
@@ -7,8 +7,8 @@
 *.dylib
 
 # SQLite Database and WAL files
-pivis.db
-pivis.db-*
+pixiv.db
+pixiv.db-*
 
 # Downloaded Artworks directory
 /downloads/
@@ -20,4 +20,9 @@ pivis.db-*
 *.swo
 .DS_Store
 
-pivix-downloader
+pixiv-downloader
+
+pixiv-downloader.db
+pixiv-downloader.db-shm
+pixiv-downloader.db-wal
+

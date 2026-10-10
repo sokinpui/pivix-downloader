@@ -8,9 +8,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/sokinpui/pivix-downloader/internal/engine"
-	"github.com/sokinpui/pivix-downloader/internal/repository"
-	"github.com/sokinpui/pivix-downloader/internal/service"
+	"github.com/sokinpui/pixiv-downloader/internal/engine"
+	"github.com/sokinpui/pixiv-downloader/internal/repository"
+	"github.com/sokinpui/pixiv-downloader/internal/service"
 )
 
 type Handler struct {

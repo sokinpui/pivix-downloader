@@ -26,6 +26,7 @@ type Artwork struct {
 	UserID       string        `json:"user_id"`
 	UserName     string        `json:"user_name"`
 	PageCount    int           `json:"page_count"`
+	Tags         []string      `json:"tags"`
 	IllustType   int           `json:"illust_type"`
 	SourceType   string        `json:"source_type"` // 'bookmark' | 'manual'
 	Status       ArtworkStatus `json:"status"`

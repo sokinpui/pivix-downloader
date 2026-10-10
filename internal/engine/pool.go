@@ -2,14 +2,17 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/sokinpui/pivix-downloader/internal/model"
-	"github.com/sokinpui/pivix-downloader/internal/pixiv"
-	"github.com/sokinpui/pivix-downloader/internal/repository"
-	"github.com/sokinpui/pivix-downloader/internal/service"
+	"github.com/sokinpui/pixiv-downloader/internal/model"
+	"github.com/sokinpui/pixiv-downloader/internal/pixiv"
+	"github.com/sokinpui/pixiv-downloader/internal/repository"
+	"github.com/sokinpui/pixiv-downloader/internal/service"
 )
 
 type DownloadEngine struct {
@@ -159,12 +162,19 @@ func (e *DownloadEngine) processTask(ctx context.Context, taskID int64) {
 	var savedPath string
 	var fileSize int64
 	var downloadErr error
+	dirName := task.ArtworkID
+	if art, err := e.artworkRepo.GetByID(task.ArtworkID); err == nil && art != nil {
+		if sanitizedTitle := sanitizeDirectoryName(art.Title); sanitizedTitle != "" {
+			dirName = fmt.Sprintf("%s-%s", task.ArtworkID, sanitizedTitle)
+		}
+	}
+	artworkDir := filepath.Join(e.outputDir, dirName)
 
 	for attempt := 1; attempt <= 3; attempt++ {
 		if ctx.Err() != nil {
 			return
 		}
-		savedPath, fileSize, downloadErr = e.client.DownloadImage(ctx, task.ImageURL, e.outputDir)
+		savedPath, fileSize, downloadErr = e.client.DownloadImage(ctx, task.ImageURL, artworkDir)
 		if downloadErr == nil {
 			break
 		}
@@ -226,4 +236,21 @@ func (e *DownloadEngine) checkAndUpdateArtworkCompletion(artworkID string) {
 	} else {
 		_ = e.artworkRepo.UpdateStatus(artworkID, model.StatusArtworkProcessing, "")
 	}
+}
+
+func sanitizeDirectoryName(name string) string {
+	const invalidChars = `/\:*?"<>|`
+	var b strings.Builder
+	for _, r := range name {
+		if strings.ContainsRune(invalidChars, r) || r < 32 {
+			b.WriteRune('_')
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	res := strings.Trim(strings.TrimSpace(b.String()), ".")
+	if runes := []rune(res); len(runes) > 100 {
+		res = strings.TrimSpace(string(runes[:100]))
+	}
+	return res
 }

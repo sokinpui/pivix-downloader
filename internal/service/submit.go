@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
-	"github.com/sokinpui/pivix-downloader/internal/model"
-	"github.com/sokinpui/pivix-downloader/internal/pixiv"
-	"github.com/sokinpui/pivix-downloader/internal/repository"
+	"github.com/sokinpui/pixiv-downloader/internal/model"
+	"github.com/sokinpui/pixiv-downloader/internal/pixiv"
+	"github.com/sokinpui/pixiv-downloader/internal/repository"
 )
 
 type SubmissionService struct {
@@ -49,6 +49,7 @@ func (s *SubmissionService) SubmitByInput(ctx context.Context, input string) (*m
 		UserID:     work.AuthorID(),
 		UserName:   work.UserName,
 		PageCount:  work.PageCount,
+		Tags:       work.Tags,
 		IllustType: work.IllustType,
 		SourceType: "manual",
 		Status:     model.StatusArtworkPending,

@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS artworks (
     user_id TEXT NOT NULL,
     user_name TEXT NOT NULL DEFAULT '',
     page_count INTEGER NOT NULL DEFAULT 1,
+    tags TEXT NOT NULL DEFAULT '[]',
     illust_type INTEGER NOT NULL DEFAULT 0,
     source_type TEXT NOT NULL,                -- 'bookmark' | 'manual'
     status TEXT NOT NULL,                     -- 'pending' | 'processing' | 'completed' | 'partial' | 'failed'
@@ -79,5 +80,9 @@ CREATE INDEX IF NOT EXISTS idx_tasks_status ON download_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_artwork_id ON download_tasks(artwork_id);
 `
 	_, err := db.Exec(schema)
+	if err != nil {
+		return err
+	}
+	_, _ = db.Exec(`ALTER TABLE artworks ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'`)
 	return err
 }

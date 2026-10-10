@@ -1,4 +1,4 @@
-module github.com/sokinpui/pivix-downloader
+module github.com/sokinpui/pixiv-downloader
 
 go 1.26.0
 

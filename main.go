@@ -12,17 +12,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sokinpui/pivix-downloader/internal/database"
-	"github.com/sokinpui/pivix-downloader/internal/engine"
-	"github.com/sokinpui/pivix-downloader/internal/handler"
-	"github.com/sokinpui/pivix-downloader/internal/pixiv"
-	"github.com/sokinpui/pivix-downloader/internal/repository"
-	"github.com/sokinpui/pivix-downloader/internal/service"
+	"github.com/sokinpui/pixiv-downloader/internal/database"
+	"github.com/sokinpui/pixiv-downloader/internal/engine"
+	"github.com/sokinpui/pixiv-downloader/internal/handler"
+	"github.com/sokinpui/pixiv-downloader/internal/pixiv"
+	"github.com/sokinpui/pixiv-downloader/internal/repository"
+	"github.com/sokinpui/pixiv-downloader/internal/service"
 )
 
 func main() {
 	port := flag.Int("port", 8080, "HTTP server port")
-	dbPath := flag.String("db", "./pivis.db", "SQLite database file path")
+	dbPath := flag.String("db", "./pixiv-downloader.db", "SQLite database file path")
 	sessionID := flag.String("session", "", "Pixiv PHPSESSID (optional override)")
 	userID := flag.String("user-id", "", "Pixiv User ID (optional override)")
 	proxyAddr := flag.String("proxy", "", "Optional HTTP/SOCKS5 proxy")
